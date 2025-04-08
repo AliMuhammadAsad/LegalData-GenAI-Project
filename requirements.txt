@@ -1,0 +1,11 @@
+boto3
+langchain
+haystack
+faiss-cpu
+pandas
+numpy
+flask
+requests
+python-dotenv
+jupyter
+pytest
