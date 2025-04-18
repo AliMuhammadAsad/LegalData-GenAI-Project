@@ -9,13 +9,12 @@ import logging
 import streamlit as st
 import tempfile
 from pathlib import Path
+import streamlit.components.v1 as components
 
 # Add the project directory to the path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
-
-# Import project modules
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -40,11 +39,19 @@ if 'rag_pipeline' not in st.session_state:
 if 'processing_complete' not in st.session_state:
     st.session_state.processing_complete = False
 
+# JavaScript for copy to clipboard
+COPY_BUTTON_JS = """
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(
+        () => alert('Copied to clipboard!'),
+        (err) => alert('Failed to copy: ' + err)
+    );
+}
+</script>
+"""
+
 # Function to process an uploaded document
-
-
-# Modify the process_document function inside the app.py file
-
 def process_document(uploaded_file, enforce_legal=True):
     """
     Process an uploaded document through the pipeline
@@ -62,59 +69,77 @@ def process_document(uploaded_file, enforce_legal=True):
         tmp_path = tmp_file.name
 
     try:
-        with st.spinner(f"Processing {uploaded_file.name}..."):
-            # Process document with validation
-            document_processor = DocumentProcessor()
-            # Use filename as document_id
-            document_id = Path(uploaded_file.name).stem
+        # Progress bar for document processing
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-            # Process with validation
-            processed_file, is_legal, confidence, doc_type = document_processor.process_document(
-                tmp_path,
-                document_id=document_id,
-                enforce_legal=enforce_legal
-            )
+        # Simulate stages of processing
+        status_text.text(f"Uploading {uploaded_file.name}...")
+        progress_bar.progress(20)
 
-            if not is_legal:
-                st.warning(
-                    f"⚠️ Document '{uploaded_file.name}' doesn't appear to be a legal document (confidence: {confidence:.2f}). It has been processed, but results may not be optimal.")
+        # Process document with validation
+        document_processor = DocumentProcessor()
+        document_id = Path(uploaded_file.name).stem
 
-            # Create embeddings
-            embedding_creator = EmbeddingCreator()
-            doc_id, embeddings_file, index_file = embedding_creator.create_embeddings(
-                processed_file)
+        status_text.text("Validating document...")
+        progress_bar.progress(40)
+        processed_file, is_legal, confidence, doc_type = document_processor.process_document(
+            tmp_path,
+            document_id=document_id,
+            enforce_legal=enforce_legal
+        )
 
-            # Update master index
-            index_manager = DocumentIndexManager()
-            index_manager.create_or_update_master_index()
+        if not is_legal:
+            st.warning(
+                f"⚠️ Document '{uploaded_file.name}' doesn't appear to be a legal document (confidence: {confidence:.2f}). It has been processed, but results may not be optimal.")
 
-            # Add to session state
-            doc_info = {
-                'document_id': doc_id,
-                'filename': uploaded_file.name,
-                'processed_file': processed_file,
-                'embeddings_file': embeddings_file,
-                'index_file': index_file,
-                'is_legal': is_legal,
-                'legal_confidence': confidence,
-                'document_type': doc_type
-            }
+        # Create embeddings
+        status_text.text("Creating embeddings...")
+        progress_bar.progress(60)
+        embedding_creator = EmbeddingCreator()
+        doc_id, embeddings_file, index_file = embedding_creator.create_embeddings(
+            processed_file)
 
-            st.session_state.processed_docs.append(doc_info)
+        # Update master index
+        status_text.text("Updating index...")
+        progress_bar.progress(80)
+        index_manager = DocumentIndexManager()
+        index_manager.create_or_update_master_index()
 
-            # Initialize or reinitialize the RAG pipeline
-            st.session_state.rag_pipeline = RAGPipeline()
-            st.session_state.processing_complete = True
+        # Complete progress
+        status_text.text("Finalizing...")
+        progress_bar.progress(100)
 
-            return {
-                'status': 'success',
-                'document_id': doc_id,
-                'is_legal': is_legal,
-                'legal_confidence': confidence,
-                'document_type': doc_type
-            }
+        # Add to session state
+        doc_info = {
+            'document_id': doc_id,
+            'filename': uploaded_file.name,
+            'processed_file': processed_file,
+            'embeddings_file': embeddings_file,
+            'index_file': index_file,
+            'is_legal': is_legal,
+            'legal_confidence': confidence,
+            'document_type': doc_type
+        }
+
+        st.session_state.processed_docs.append(doc_info)
+
+        # Initialize or reinitialize the RAG pipeline
+        st.session_state.rag_pipeline = RAGPipeline()
+        st.session_state.processing_complete = True
+
+        # Clear progress bar and status
+        progress_bar.empty()
+        status_text.empty()
+
+        return {
+            'status': 'success',
+            'document_id': doc_id,
+            'is_legal': is_legal,
+            'legal_confidence': confidence,
+            'document_type': doc_type
+        }
     except ValueError as e:
-        # This is raised when the document is not legal and enforce_legal=True
         st.error(f"❌ {str(e)}")
         return {
             'status': 'rejected',
@@ -123,18 +148,34 @@ def process_document(uploaded_file, enforce_legal=True):
     except Exception as e:
         st.error(f"Error processing document: {str(e)}")
         logger.error(f"Error processing document: {str(e)}")
-        logger.exception("Detailed traceback:")  # Add this to get full traceback
+        logger.exception("Detailed traceback:")
         return {
             'status': 'error',
             'error': str(e)
         }
     finally:
-        # Clean up temporary file
         os.unlink(tmp_path)
 
+# Function to delete a processed document
+def delete_document(doc_id):
+    """
+    Remove a document from session state
+    
+    Args:
+        doc_id (str): ID of the document to delete
+    """
+    st.session_state.processed_docs = [
+        doc for doc in st.session_state.processed_docs if doc['document_id'] != doc_id
+    ]
+    # Reinitialize RAG pipeline if documents remain, else reset
+    if st.session_state.processed_docs:
+        st.session_state.rag_pipeline = RAGPipeline()
+    else:
+        st.session_state.rag_pipeline = None
+        st.session_state.processing_complete = False
+    st.rerun()
+
 # Function to handle user queries
-
-
 def process_query(query):
     """
     Process a user query through the RAG pipeline
@@ -150,7 +191,6 @@ def process_query(query):
 
     return st.session_state.rag_pipeline.process_query(query)
 
-
 # Main app layout
 st.title("📚 LexiSearch: Real-Time Legal Document Q&A")
 st.markdown("""
@@ -165,8 +205,15 @@ with st.sidebar:
     uploaded_files = st.file_uploader(
         "Upload documents (PDF, DOCX, TXT)",
         type=["pdf", "docx", "txt"],
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        help="Select one or more files to upload"
     )
+
+    # Real-time upload status
+    if uploaded_files:
+        upload_status = st.empty()
+        for i, file in enumerate(uploaded_files):
+            upload_status.text(f"Uploaded {file.name} ({i+1}/{len(uploaded_files)})")
 
     enforce_legal = st.checkbox("Enforce legal document validation", value=True)
 
@@ -184,26 +231,39 @@ with st.sidebar:
             if successful_uploads > 0:
                 st.success(
                     f"Successfully processed {successful_uploads} documents")
+                upload_status.empty()
 
     st.divider()
 
     st.header("Processed Documents")
     if st.session_state.processed_docs:
         for doc in st.session_state.processed_docs:
-            # Create color-coded badge for legal confidence
+            # Create color-coded badge with tooltip
+            confidence = doc.get('legal_confidence', 1.0)
             if doc.get('is_legal', True):
-                confidence = doc.get('legal_confidence', 1.0)
                 if confidence > 0.8:
                     confidence_badge = "🟢"
+                    tooltip = "High confidence: Likely a legal document"
                 elif confidence > 0.5:
                     confidence_badge = "🟡"
+                    tooltip = "Moderate confidence: May be a legal document"
                 else:
                     confidence_badge = "🟠"
+                    tooltip = "Low confidence: Possibly not a legal document"
             else:
                 confidence_badge = "🔴"
+                tooltip = "Not recognized as a legal document"
 
-            # Display document with badges
-            st.markdown(f"{confidence_badge} **{doc['filename']}**")
+            # Display document with badge and delete button
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(
+                    f'<span title="{tooltip}">{confidence_badge}</span> **{doc["filename"]}**',
+                    unsafe_allow_html=True
+                )
+            with col2:
+                if st.button("Delete", key=f"delete_{doc['document_id']}"):
+                    delete_document(doc['document_id'])
 
             # Create expandable details section
             with st.expander("Details"):
@@ -216,18 +276,30 @@ with st.sidebar:
 
     st.divider()
 
-    # Clear chat history button
-    if st.button("Clear Chat History"):
+    # Clear chat history and documents button
+    if st.button("Clear Chat History and Documents"):
         st.session_state.chat_history = []
+        st.session_state.processed_docs = []
+        st.session_state.rag_pipeline = None
+        st.session_state.processing_complete = False
         st.rerun()
 
 # Main chat interface
 st.header("Chat with your documents")
 
 # Display chat history
+components.html(COPY_BUTTON_JS)  # Include copy button JavaScript
 for message in st.session_state.chat_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+
+        # Add copy button for assistant responses
+        if message["role"] == "assistant":
+            if st.button("Copy Response", key=f"copy_{len(st.session_state.chat_history)}_{message['content'][:10]}"):
+                st.markdown(
+                    f'<button onclick="copyToClipboard(\'{message["content"].replace("'", "\\'")}\')">Copy</button>',
+                    unsafe_allow_html=True
+                )
 
         # If this is a response message with sources, show them in an expander
         if message["role"] == "assistant" and "sources" in message:
@@ -238,8 +310,11 @@ for message in st.session_state.chat_history:
                     st.markdown(f"From document: *{source['document_id']}*")
                     st.markdown(f"```{source['text']}```")
 
-# Query input
-query = st.chat_input("Ask a question about your documents...")
+# Query input - disabled if no documents are processed
+query = st.chat_input(
+    "Ask a question about your documents...",
+    disabled=not st.session_state.processed_docs
+)
 
 if query:
     # Add user message to chat history
@@ -252,6 +327,7 @@ if query:
     # Generate and display response
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
+        typing_placeholder = st.empty()
 
         if not st.session_state.processed_docs:
             response = "Please upload and process documents before asking questions."
@@ -261,6 +337,11 @@ if query:
         else:
             try:
                 with st.spinner("Generating response..."):
+                    # Simulate typing animation
+                    typing_placeholder.markdown("Typing...")
+                    time.sleep(0.5)  # Brief delay for effect
+                    typing_placeholder.empty()
+
                     # Process the query
                     result = process_query(query)
 
@@ -292,6 +373,7 @@ if query:
                     {"role": "assistant", "content": error_message})
                 message_placeholder.markdown(error_message)
                 logger.error(error_message)
+                typing_placeholder.empty()
 
 # Footer
 st.divider()
