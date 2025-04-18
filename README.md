@@ -10,9 +10,6 @@ Organizations often face challenges in quickly accessing information from length
 The architecture leverages several AWS services:
 - **Amazon S3**: For storing documents.
 - **Amazon Textract**: For extracting text from documents.
-- **Amazon SageMaker**: For generating embeddings and running the LLM.
-- **AWS Lambda**: For executing serverless functions to handle API requests.
-- **Amazon API Gateway**: For managing API endpoints.
 
 ## Objectives
 - Implement a scalable Q&A architecture on AWS.
@@ -20,10 +17,10 @@ The architecture leverages several AWS services:
 - Demonstrate real-world applications, such as legal or compliance Q&A.
 
 ## Methodology
-1. **Document Storage**: Store documents in Amazon S3.
-2. **Text Extraction**: Use Amazon Textract to extract text from documents.
-3. **Embedding Generation**: Generate embeddings using Amazon SageMaker and store them in a vector database (e.g., FAISS).
-4. **API Integration**: Use Amazon API Gateway for user interactions and AWS Lambda for processing queries.
+1. **Document Processing**: Cleaning and structuring documents. 
+2. **Embedding Generation**: Creating vector representations, and storing them in S3.
+3. **Hybrid Retrieval**: Combinging retrieval methods to create a hybrid retrieval method.
+4. **Response Generation**: Assessing system effectiveness on various metrics.
 
 ## Usage
 1. **Upload Documents**: Users can upload documents through the frontend interface.
@@ -31,22 +28,15 @@ The architecture leverages several AWS services:
 3. **View Results**: The answers are displayed on the frontend for user review.
 
 ## Performance Metrics
-- **Latency**: Measure the average query response time.
-- **Accuracy**: Evaluate the precision and relevance of the generated answers.
+We used Llama3 as a judge which performed evaluation on the following metrics.
+- **Average Processing Time**: Measure the average query response time.
+- **Faithfullness**: Measures if the answer is supported
+- **Answer Relevance**: Assesses how well the answer addresses the question
+- **Completeness**: Checks if the answer fully covers the question's scope
+- **Processing Time**: Tracks retrieval time, generation time, and total time per query
 
 ## Concrete Usage Scenario
 A compliance team uploads legal documents to S3. Employees can query specific regulations, and the system provides direct answers, significantly reducing the time spent on manual searches.
-
-## Getting Started
-1. Clone the repository.
-2. Set up your AWS account and configure the necessary services.
-3. Run the setup script to initialize the AWS infrastructure.
-4. Deploy the application using the provided deployment scripts.
-
-## Requirements
-- AWS account (preferably using the free tier)
-- Python 3.x
-- Node.js (for the frontend)
 
 ## Acknowledgments
 This project utilizes various AWS services and open-source libraries to facilitate document processing and Q&A capabilities.
